@@ -1,9 +1,6 @@
-import torch
 import torch.nn as nn
 
-from .layers import FourierMapping
-
-from ogan.utils import create_grid
+from .layers import Swish, UpsampleBlock, ResidualBlock
 
 
 class Encoder(nn.Module):
@@ -19,9 +16,9 @@ class Encoder(nn.Module):
             cur_c = z_dim // (2 ** (num_layers - i))
             modules.append(
                 nn.Sequential(
-                    nn.Conv2d(pre_c, cur_c, kernel_size=5, padding=2, stride=2),
+                    nn.Conv2d(pre_c, cur_c, kernel_size=3, padding=1, stride=2),
                     nn.BatchNorm2d(cur_c),
-                    nn.LeakyReLU()))
+                    Swish()))
             pre_c = cur_c
 
         self._fc = nn.Linear(z_dim * self.map_size * self.map_size, z_dim)
@@ -49,21 +46,16 @@ class Generator(nn.Module):
 
         modules = []
         pre_c = z_dim
-        for i in range(num_layers):
+        for i in range(num_layers + 1):
             cur_c = z_dim // 2 ** (i + 1)
-            modules.append(nn.Sequential(
-                nn.ConvTranspose2d(pre_c, cur_c, kernel_size=5, padding=2,
-                                   stride=2, output_padding=1),
-                nn.BatchNorm2d(cur_c),
-                nn.ReLU()
-            ))
+            modules.append(UpsampleBlock(pre_c, cur_c, z_dim))
             pre_c = cur_c
-        modules.append(nn.Sequential(
-            nn.ConvTranspose2d(pre_c, 3, kernel_size=5, padding=2, stride=2,
-                               output_padding=1),
+        self._rec = nn.Sequential(
+            ResidualBlock(pre_c),
+            nn.Conv2d(pre_c, 3, kernel_size=1),
             nn.Tanh()
-        ))
-        self._seq = nn.Sequential(*modules)
+        )
+        self.module_list = nn.ModuleList(modules)
 
     def forward(self, z):
         """
@@ -71,17 +63,15 @@ class Generator(nn.Module):
         :param z: Tensor. shape = (B, z_dim)
         :return:
         """
+        z_in = z
+        z = self._fc(z)
+        z = z.reshape(-1, self.z_dim, self.map_size, self.map_size)
 
-        # (B, m_h, m_w, z_dim)
-        # z_rep = z.unsqueeze(1).repeat(1, self.map_size ** 2, 1) \
-        #     .reshape(z.shape[0], self.map_size, self.map_size, z.shape[1])
-        # grid = self.grid.unsqueeze(0).repeat(z.shape[0], 1, 1, 1)
-        # grid = self.pos_map(grid)
-        # z_sample = self.map_z(torch.cat([grid, z_rep], dim=-1).permute(0, 3, 1, 2).contiguous())
-        z_sample = self._fc(z)
-        z_sample = z_sample.reshape(-1, self.z_dim, self.map_size, self.map_size)
+        for m in self.module_list:
+            z = m(z, z_in)
 
-        return self._seq(z_sample)
+        x_f = self._rec(z)
+        return x_f
 
 
 class OGAN(nn.Module):

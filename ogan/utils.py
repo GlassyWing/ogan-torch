@@ -5,11 +5,21 @@ from torch.nn.utils import spectral_norm
 import torch.nn as nn
 
 
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
+    elif isinstance(m, nn.BatchNorm2d) and m.weight is not None:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+
+
 def add_sn(m):
     if isinstance(m, (nn.Conv2d, nn.ConvTranspose2d)):
         return spectral_norm(m)
     else:
         return m
+
 
 def correlation(x, y):
     x = x - torch.mean(x, dim=1, keepdim=True)

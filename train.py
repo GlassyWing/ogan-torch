@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 
 from ogan.dataset import ImageFolderDataset
 from ogan.model import OGAN
-from ogan.utils import correlation, add_sn
+from ogan.utils import correlation, add_sn, weights_init
 
 if __name__ == '__main__':
 
@@ -28,8 +28,8 @@ if __name__ == '__main__':
     batch_size = opt.batch_size
     device = "cuda:0"
 
-    lr = 1e-4
-    z_dim = 128
+    lr = 2e-4
+    z_dim = 256
     img_size = 64
     num_layers = 4
 
@@ -40,7 +40,7 @@ if __name__ == '__main__':
     os.makedirs("output", exist_ok=True)
 
     ogan = OGAN(z_dim, img_size, num_layers).to(device)
-    # ogan.apply(add_sn)
+    ogan.apply(weights_init)
 
     if opt.pretrained_weights is not None:
         ogan.load_state_dict(torch.load(opt.pretrained_weights, map_location=device), strict=False)
@@ -48,8 +48,10 @@ if __name__ == '__main__':
     encoder = ogan.encoder
     generator = ogan.generator
 
-    optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr, alpha=0.99)
-    optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr, alpha=0.99)
+    optimizer_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
+    g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-4)
+    optimizer_e = torch.optim.Adam(encoder.parameters(), lr=lr, betas=(0.5, 0.999))
+    e_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_e, T_max=15, eta_min=5e-4)
 
     step = 0
     for epoch in range(epochs):
@@ -86,7 +88,7 @@ if __name__ == '__main__':
             z_fake_mean = torch.mean(z_fake, dim=1, keepdim=True)
 
             z_corr = correlation(z_in, z_fake)
-            g_loss = - torch.mean(z_fake_mean) - torch.mean(0.5 * z_corr)
+            g_loss = - torch.mean(z_fake_mean + 0.5 * z_corr)
             g_loss.backward()
             optimizer_g.step()
 
@@ -103,7 +105,7 @@ if __name__ == '__main__':
                     gen_img = generator(z)
                     gen_img = gen_img.permute(0, 2, 3, 1)
                     gen_img = (gen_img[0].cpu().numpy() + 1) / 2  * 255
-                    gen_img = gen_img.astype(np.uint8)
+                    gen_img = np.round(gen_img, 0).astype(np.uint8)
 
                     plt.imshow(gen_img)
                     # plt.savefig(f"output/ae_ckpt_%d_%.6f.png" % (epoch, total_loss))
@@ -111,5 +113,8 @@ if __name__ == '__main__':
 
             total_loss = (e_loss.item() + g_loss.item()) * x_real.shape[0]
             total_size += x_real.shape[0]
+
+        g_scheduler.step()
+        e_scheduler.step()
 
         torch.save(ogan.state_dict(), f"checkpoints/ogan_ckpt_%d_%.6f.pth" % (epoch, total_loss / total_size))
