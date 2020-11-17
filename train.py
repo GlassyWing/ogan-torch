@@ -1,7 +1,10 @@
 import argparse
 import logging
+import os
 
 import torch
+import numpy as np
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 
 from ogan.dataset import ImageFolderDataset
@@ -28,10 +31,13 @@ if __name__ == '__main__':
     lr = 1e-4
     z_dim = 128
     img_size = 64
-    num_layers = 3
+    num_layers = 5
 
     dataset = ImageFolderDataset(opt.dataset_path, img_size)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=opt.n_cpu)
+
+    os.makedirs("checkpoints", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
 
     ogan = OGAN(z_dim, img_size, num_layers).to(device)
     ogan.apply(add_sn)
@@ -42,9 +48,10 @@ if __name__ == '__main__':
     encoder = ogan.encoder
     generator = ogan.generator
 
-    optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr)
-    optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr)
+    optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr, alpha=0.99)
+    optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr, alpha=0.99)
 
+    step = 0
     for epoch in range(epochs):
 
         total_loss = 0
@@ -64,7 +71,8 @@ if __name__ == '__main__':
             z_real_mean = torch.mean(z_real, dim=1, keepdim=True)
 
             z_corr = correlation(z_in, z_fake)
-            e_loss = torch.mean(- z_real_mean + z_fake_mean - 0.5 * z_corr)
+            qp_loss = 0.25 * (z_fake_mean - z_real_mean)[:, 0] ** 2 / torch.mean((x_real - x_fake) ** 2, dim=[1, 2, 3])
+            e_loss = torch.mean(z_fake_mean - z_real_mean - 0.5 * z_corr) + torch.mean(qp_loss)
 
             e_loss.backward()
             optimizer_e.step()
@@ -75,10 +83,10 @@ if __name__ == '__main__':
             optimizer_g.zero_grad()
             x_fake = generator(z_in)
             z_fake = encoder(x_fake)
-            z_fake_mean = torch.mean(encoder(x_fake), dim=1, keepdim=True)
+            z_fake_mean = torch.mean(z_fake, dim=1, keepdim=True)
 
             z_corr = correlation(z_in, z_fake)
-            g_loss = torch.mean(- z_fake_mean - 0.5 * z_corr)
+            g_loss = - torch.mean(z_fake_mean + 0.5 * z_corr)
             g_loss.backward()
             optimizer_g.step()
 
@@ -86,6 +94,20 @@ if __name__ == '__main__':
                 "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
                 % (epoch, epochs, i, len(dataloader), e_loss.item(), g_loss.item())
             )
+
+            step += 1
+
+            if step != 0 and step % 100 == 0:
+                with torch.no_grad():
+                    z = torch.randn((1, z_dim)).to(device)
+                    gen_img = generator(z)
+                    gen_img = gen_img.permute(0, 2, 3, 1)
+                    gen_img = gen_img[0].cpu().numpy() * 255
+                    gen_img = gen_img.astype(np.uint8)
+
+                    plt.imshow(gen_img)
+                    # plt.savefig(f"output/ae_ckpt_%d_%.6f.png" % (epoch, total_loss))
+                    plt.show()
 
             total_loss = (e_loss.item() + g_loss.item()) * x_real.shape[0]
             total_size += x_real.shape[0]
