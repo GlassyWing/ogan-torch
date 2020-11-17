@@ -31,7 +31,7 @@ if __name__ == '__main__':
     lr = 1e-4
     z_dim = 128
     img_size = 64
-    num_layers = 5
+    num_layers = 4
 
     dataset = ImageFolderDataset(opt.dataset_path, img_size)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=opt.n_cpu)
@@ -40,7 +40,7 @@ if __name__ == '__main__':
     os.makedirs("output", exist_ok=True)
 
     ogan = OGAN(z_dim, img_size, num_layers).to(device)
-    ogan.apply(add_sn)
+    # ogan.apply(add_sn)
 
     if opt.pretrained_weights is not None:
         ogan.load_state_dict(torch.load(opt.pretrained_weights, map_location=device), strict=False)
@@ -86,7 +86,7 @@ if __name__ == '__main__':
             z_fake_mean = torch.mean(z_fake, dim=1, keepdim=True)
 
             z_corr = correlation(z_in, z_fake)
-            g_loss = - torch.mean(z_fake_mean + 0.5 * z_corr)
+            g_loss = - torch.mean(z_fake_mean) - torch.mean(0.5 * z_corr)
             g_loss.backward()
             optimizer_g.step()
 
@@ -102,7 +102,7 @@ if __name__ == '__main__':
                     z = torch.randn((1, z_dim)).to(device)
                     gen_img = generator(z)
                     gen_img = gen_img.permute(0, 2, 3, 1)
-                    gen_img = gen_img[0].cpu().numpy() * 255
+                    gen_img = (gen_img[0].cpu().numpy() + 1) / 2  * 255
                     gen_img = gen_img.astype(np.uint8)
 
                     plt.imshow(gen_img)

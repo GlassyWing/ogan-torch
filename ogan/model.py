@@ -24,7 +24,7 @@ class Encoder(nn.Module):
                     nn.LeakyReLU()))
             pre_c = cur_c
 
-        modules.append(nn.AdaptiveAvgPool2d(1))
+        self._fc = nn.Linear(z_dim * self.map_size * self.map_size, z_dim)
 
         self._seq = nn.Sequential(*modules)
 
@@ -32,7 +32,9 @@ class Encoder(nn.Module):
         return self.map_size
 
     def forward(self, x):
-        return self._seq(x).squeeze(-1).squeeze(-1)
+        x = self._seq(x).reshape(x.shape[0], -1)
+        x = self._fc(x)
+        return x
 
 
 class Generator(nn.Module):
@@ -40,11 +42,10 @@ class Generator(nn.Module):
     def __init__(self, z_dim, map_size, num_layers):
         super().__init__()
 
+        self.z_dim = z_dim
         self.map_size = map_size
 
-        self.grid = torch.nn.Parameter(create_grid(map_size, map_size), requires_grad=False)
-        self.pos_map = FourierMapping((z_dim // 2, 2), 42)
-        self.map_z = torch.nn.Conv2d(z_dim * 2, z_dim, kernel_size=1)
+        self._fc = nn.Linear(z_dim, self.map_size ** 2 * z_dim)
 
         modules = []
         pre_c = z_dim
@@ -72,11 +73,13 @@ class Generator(nn.Module):
         """
 
         # (B, m_h, m_w, z_dim)
-        z_rep = z.unsqueeze(1).repeat(1, self.map_size ** 2, 1) \
-            .reshape(z.shape[0], self.map_size, self.map_size, z.shape[1])
-        grid = self.grid.unsqueeze(0).repeat(z.shape[0], 1, 1, 1)
-        grid = self.pos_map(grid)
-        z_sample = self.map_z(torch.cat([grid, z_rep], dim=-1).permute(0, 3, 1, 2).contiguous())
+        # z_rep = z.unsqueeze(1).repeat(1, self.map_size ** 2, 1) \
+        #     .reshape(z.shape[0], self.map_size, self.map_size, z.shape[1])
+        # grid = self.grid.unsqueeze(0).repeat(z.shape[0], 1, 1, 1)
+        # grid = self.pos_map(grid)
+        # z_sample = self.map_z(torch.cat([grid, z_rep], dim=-1).permute(0, 3, 1, 2).contiguous())
+        z_sample = self._fc(z)
+        z_sample = z_sample.reshape(-1, self.z_dim, self.map_size, self.map_size)
 
         return self._seq(z_sample)
 
