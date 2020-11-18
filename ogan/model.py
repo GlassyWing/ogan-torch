@@ -5,7 +5,7 @@ from .layers import Swish, UpsampleBlock, ResidualBlock
 
 class Encoder(nn.Module):
 
-    def __init__(self, z_dim, img_size, num_layers):
+    def __init__(self, z_dim, img_size, num_layers, max_num_channels):
         super().__init__()
 
         self.map_size = img_size // 2 ** (num_layers + 1)
@@ -13,7 +13,7 @@ class Encoder(nn.Module):
         pre_c = 3
         modules = []
         for i in range(num_layers + 1):
-            cur_c = z_dim // (2 ** (num_layers - i))
+            cur_c = max_num_channels // (2 ** (num_layers - i))
             modules.append(
                 nn.Sequential(
                     nn.Conv2d(pre_c, cur_c, kernel_size=3, padding=1, stride=2),
@@ -21,7 +21,7 @@ class Encoder(nn.Module):
                     Swish()))
             pre_c = cur_c
 
-        self._fc = nn.Linear(z_dim * self.map_size * self.map_size, z_dim)
+        self._fc = nn.Linear(max_num_channels * self.map_size * self.map_size, z_dim)
 
         self._seq = nn.Sequential(*modules)
 
@@ -36,18 +36,19 @@ class Encoder(nn.Module):
 
 class Generator(nn.Module):
 
-    def __init__(self, z_dim, map_size, num_layers):
+    def __init__(self, z_dim, map_size, num_layers, max_num_channels):
         super().__init__()
 
         self.z_dim = z_dim
         self.map_size = map_size
+        self.max_num_channels = max_num_channels
 
-        self._fc = nn.Linear(z_dim, self.map_size ** 2 * z_dim)
+        self._fc = nn.Linear(z_dim, self.map_size ** 2 * max_num_channels)
 
         modules = []
-        pre_c = z_dim
+        pre_c = max_num_channels
         for i in range(num_layers + 1):
-            cur_c = z_dim // 2 ** (i + 1)
+            cur_c = max_num_channels // 2 ** (i + 1)
             modules.append(UpsampleBlock(pre_c, cur_c, z_dim))
             pre_c = cur_c
         self._rec = nn.Sequential(
@@ -65,7 +66,7 @@ class Generator(nn.Module):
         """
         z_in = z
         z = self._fc(z)
-        z = z.reshape(-1, self.z_dim, self.map_size, self.map_size)
+        z = z.reshape(-1, self.max_num_channels, self.map_size, self.map_size)
 
         for m in self.module_list:
             z = m(z, z_in)
@@ -76,8 +77,8 @@ class Generator(nn.Module):
 
 class OGAN(nn.Module):
 
-    def __init__(self, z_dim, img_size, num_layers):
+    def __init__(self, z_dim, img_size, num_layers, max_num_channels):
         super().__init__()
 
-        self.encoder = Encoder(z_dim, img_size, num_layers)
-        self.generator = Generator(z_dim, self.encoder.map_size, num_layers)
+        self.encoder = Encoder(z_dim, img_size, num_layers, max_num_channels)
+        self.generator = Generator(z_dim, self.encoder.map_size, num_layers, max_num_channels)

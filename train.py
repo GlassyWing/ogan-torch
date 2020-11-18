@@ -32,6 +32,7 @@ if __name__ == '__main__':
     z_dim = 256
     img_size = 64
     num_layers = 4
+    max_num_channels = img_size * 8
 
     dataset = ImageFolderDataset(opt.dataset_path, img_size)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=opt.n_cpu)
@@ -39,7 +40,7 @@ if __name__ == '__main__':
     os.makedirs("checkpoints", exist_ok=True)
     os.makedirs("output", exist_ok=True)
 
-    ogan = OGAN(z_dim, img_size, num_layers).to(device)
+    ogan = OGAN(z_dim, img_size, num_layers, max_num_channels).to(device)
     ogan.apply(weights_init)
 
     if opt.pretrained_weights is not None:
