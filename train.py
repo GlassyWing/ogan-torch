@@ -6,6 +6,7 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
 from ogan.dataset import ImageFolderDataset
 from ogan.model import OGAN
@@ -21,7 +22,7 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", type=int, default=128, help="size of each sample batch")
     parser.add_argument("--dataset_path", type=str, required=True, help="dataset path")
     parser.add_argument("--pretrained_weights", type=str, help="if specified starts from checkpoint model")
-    parser.add_argument("--n_cpu", type=int, default=16, help="number of cpu threads to use during batch generation")
+    parser.add_argument("--n_cpu", type=int, default=4, help="number of cpu threads to use during batch generation")
     opt = parser.parse_args()
 
     epochs = opt.epochs
@@ -30,8 +31,8 @@ if __name__ == '__main__':
 
     lr = 2e-4
     z_dim = 256
-    img_size = 64
-    num_layers = 4
+    img_size = 128
+    num_layers = 5
     max_num_channels = img_size * 8
 
     dataset = ImageFolderDataset(opt.dataset_path, img_size)
@@ -50,22 +51,27 @@ if __name__ == '__main__':
     generator = ogan.generator
 
     optimizer_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
-    g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-4)
+    g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-6)
     optimizer_e = torch.optim.Adam(encoder.parameters(), lr=lr, betas=(0.5, 0.999))
-    e_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_e, T_max=15, eta_min=5e-4)
+    e_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_e, T_max=15, eta_min=5e-6)
 
     step = 0
     for epoch in range(epochs):
 
         total_loss = 0
         total_size = 0
-        for i, x_real in enumerate(dataloader):
+        train_bar = tqdm(dataloader)
+        for i, x_real in enumerate(train_bar):
             x_real = x_real.to(device)
-            z_in = torch.randn(x_real.shape[0], z_dim).to(device)
+            z_in = torch.randn(x_real.shape[0], z_dim, device=device)
 
             """
             Train Encoder
             """
+            for param in generator.parameters():
+                param.requires_grad = False
+            for param in encoder.parameters():
+                param.requires_grad = True
             optimizer_e.zero_grad()
             x_fake = generator(z_in).detach()
             z_fake = encoder(x_fake)
@@ -83,6 +89,10 @@ if __name__ == '__main__':
             """
             Train Generator
             """
+            for param in encoder.parameters():
+                param.requires_grad = False
+            for param in generator.parameters():
+                param.requires_grad = True
             optimizer_g.zero_grad()
             x_fake = generator(z_in)
             z_fake = encoder(x_fake)
@@ -93,7 +103,7 @@ if __name__ == '__main__':
             g_loss.backward()
             optimizer_g.step()
 
-            print(
+            train_bar.set_description(
                 "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
                 % (epoch, epochs, i, len(dataloader), e_loss.item(), g_loss.item())
             )
@@ -112,7 +122,7 @@ if __name__ == '__main__':
                     # plt.savefig(f"output/ae_ckpt_%d_%.6f.png" % (epoch, total_loss))
                     plt.show()
 
-            total_loss = (e_loss.item() + g_loss.item()) * x_real.shape[0]
+            total_loss += (e_loss.item() + g_loss.item())
             total_size += x_real.shape[0]
 
         g_scheduler.step()
