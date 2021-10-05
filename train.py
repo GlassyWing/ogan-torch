@@ -29,17 +29,10 @@ if __name__ == '__main__':
     batch_size = opt.batch_size
     device = "cuda:0"
 
-<<<<<<< HEAD
     lr = 1e-4
     z_dim = 128
     img_size = 128
     num_layers = 4
-=======
-    lr = 2e-4
-    z_dim = 256
-    img_size = 128
-    num_layers = 5
->>>>>>> e7ce060f81d8ddd06dd41c7ec6604a1c7fdb59f1
     max_num_channels = img_size * 8
 
     dataset = ImageFolderDataset(opt.dataset_path, img_size)
@@ -64,15 +57,9 @@ if __name__ == '__main__':
     encoder = ogan.encoder
     generator = ogan.generator
 
-<<<<<<< HEAD
     optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr, alpha= 0.999)
     g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-6)
     optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr, alpha= 0.999)
-=======
-    optimizer_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.999))
-    g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-6)
-    optimizer_e = torch.optim.Adam(encoder.parameters(), lr=lr, betas=(0.5, 0.999))
->>>>>>> e7ce060f81d8ddd06dd41c7ec6604a1c7fdb59f1
     e_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_e, T_max=15, eta_min=5e-6)
 
     step = 0
