@@ -6,7 +6,9 @@ import torch
 import numpy as np
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
+from torchvision.utils import save_image
 from tqdm import tqdm
+import torch.nn.functional as F
 
 from ogan.dataset import ImageFolderDataset
 from ogan.model import OGAN
@@ -27,12 +29,12 @@ if __name__ == '__main__':
 
     epochs = opt.epochs
     batch_size = opt.batch_size
-    device = "cuda:0"
+    device = "cuda:3"
 
-    lr = 1e-4
+    lr = 2e-4
     z_dim = 128
     img_size = 128
-    num_layers = 4
+    num_layers = int(np.log(img_size)) - 3
     max_num_channels = img_size * 8
 
     dataset = ImageFolderDataset(opt.dataset_path, img_size)
@@ -57,9 +59,9 @@ if __name__ == '__main__':
     encoder = ogan.encoder
     generator = ogan.generator
 
-    optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr, alpha= 0.999)
+    optimizer_g = torch.optim.AdamW(generator.parameters(), lr=lr, betas=(0.5, 0.99))
     g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-6)
-    optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr, alpha= 0.999)
+    optimizer_e = torch.optim.AdamW(encoder.parameters(), lr=lr, betas=(0.5, 0.99))
     e_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_e, T_max=15, eta_min=5e-6)
 
     step = 0
@@ -117,17 +119,13 @@ if __name__ == '__main__':
 
             step += 1
 
-            if step != 0 and step % 100 == 0:
+            if step != 0 and step % 50 == 0:
                 with torch.no_grad():
-                    z = torch.randn((1, z_dim)).to(device)
-                    gen_img = generator(z)
-                    gen_img = gen_img.permute(0, 2, 3, 1)
-                    gen_img = (gen_img[0].cpu().numpy() + 1) / 2  * 255
-                    gen_img = np.round(gen_img, 0).astype(np.uint8)
+                    z = torch.randn((64, z_dim)).to(device)
+                    imgs = ogan.generator(z)
+                    imgs = (imgs + 1) / 2 * 255
 
-                    plt.imshow(gen_img)
-                    # plt.savefig(f"output/ae_ckpt_%d_%.6f.png" % (epoch, total_loss))
-                    plt.show()
+                    save_image(imgs, f"output/ae_ckpt_%d_%.6f.png" % (epoch, total_loss / total_size), nrow=8, normalize=True)
 
             total_loss += (e_loss.item() + g_loss.item())
             total_size += x_real.shape[0]
