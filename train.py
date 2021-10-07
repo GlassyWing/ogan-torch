@@ -34,7 +34,7 @@ if __name__ == '__main__':
     lr = 2e-4
     z_dim = 128
     img_size = 128
-    num_layers = int(np.log(img_size)) - 3
+    num_layers = int(np.log2(img_size)) - 3
     max_num_channels = img_size * 8
 
     dataset = ImageFolderDataset(opt.dataset_path, img_size)
