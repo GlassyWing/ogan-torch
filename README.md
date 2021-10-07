@@ -4,11 +4,9 @@ A pytorch implementation for OGAN [ã€ŠOrthogonal Generative Adversarial Networkã
 
 ## Example
 
-After 3 epochs (continue...):
+After 3 epochs (Abound 2 hours):
 
 ### Generation
 
-<img src="assets/demo.jpeg">
-
-### Reconstruction
+<img src="./assets/demo.png">
 

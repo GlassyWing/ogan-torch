@@ -31,16 +31,12 @@ class UpsampleBlock(nn.Module):
     def __init__(self, in_channel, out_channel, z_dim):
         super().__init__()
 
-        # self._up = nn.ConvTranspose2d(in_channel,
-        #                               out_channel,
-        #                               kernel_size=5,
-        #                               stride=2,
-        #                               padding=2,
-        #                               output_padding=1)
-        self._up = nn.Sequential(
-            nn.UpsamplingNearest2d(scale_factor=2),
-            nn.Conv2d(in_channel, out_channel, kernel_size=5, padding=2)
-        )
+        self._up = nn.ConvTranspose2d(in_channel,
+                                      out_channel,
+                                      kernel_size=5,
+                                      stride=2,
+                                      padding=2,
+                                      output_padding=1)
         self._bn = SelfModulateBatchNorm2d(out_channel, z_dim)
         self._act = Swish()
         self._res = ResidualBlock(out_channel)
