@@ -1,11 +1,14 @@
+import torch
 import torch.nn as nn
 
-from .layers import Swish, UpsampleBlock, ResidualBlock
+from .layers import Swish, UpsampleBlock, ResidualBlock, ConvBlock
 
 
 class Encoder(nn.Module):
 
-    def __init__(self, z_dim, img_size, num_layers, max_num_channels):
+    def __init__(self, z_dim, img_size, num_layers, max_num_channels,
+                 mbstd_group_size=8,
+                 mbstd_num_features=1):
         super().__init__()
 
         self.map_size = img_size // 2 ** (num_layers + 1)
@@ -14,11 +17,7 @@ class Encoder(nn.Module):
         modules = []
         for i in range(num_layers + 1):
             cur_c = max_num_channels // (2 ** (num_layers - i))
-            modules.append(
-                nn.Sequential(
-                    nn.Conv2d(pre_c, cur_c, kernel_size=3, padding=1, stride=2),
-                    nn.BatchNorm2d(cur_c),
-                    Swish()))
+            modules.append(ConvBlock(pre_c, cur_c))
             pre_c = cur_c
 
         self._fc = nn.Linear(max_num_channels * self.map_size * self.map_size, z_dim)
@@ -52,7 +51,7 @@ class Generator(nn.Module):
             modules.append(UpsampleBlock(pre_c, cur_c, z_dim))
             pre_c = cur_c
         self._rec = nn.Sequential(
-            ResidualBlock(pre_c),
+            # ResidualBlock(pre_c),
             nn.Conv2d(pre_c, 3, kernel_size=1),
             nn.Tanh()
         )
@@ -64,12 +63,14 @@ class Generator(nn.Module):
         :param z: Tensor. shape = (B, z_dim)
         :return:
         """
-        z_in = z
+        style = z
         z = self._fc(z)
         z = z.reshape(-1, self.max_num_channels, self.map_size, self.map_size)
 
-        for m in self.module_list:
-            z = m(z, z_in)
+        for i, m in enumerate(self.module_list):
+            s = self.map_size * 2 ** i
+            noise = torch.randn(z.shape[0], 1, s, s, device=z.device)
+            z = m(z, style, noise)
 
         x_f = self._rec(z)
         return x_f

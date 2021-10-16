@@ -2,17 +2,15 @@ import argparse
 import logging
 import os
 
-import torch
 import numpy as np
-import matplotlib.pyplot as plt
+import torch
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from tqdm import tqdm
-import torch.nn.functional as F
 
 from ogan.dataset import ImageFolderDataset
 from ogan.model import OGAN
-from ogan.utils import correlation, add_sn, weights_init
+from ogan.utils import correlation, weights_init
 
 if __name__ == '__main__':
 
@@ -31,7 +29,7 @@ if __name__ == '__main__':
     batch_size = opt.batch_size
     device = "cuda:3"
 
-    lr = 2e-4
+    lr = 1e-4
     z_dim = 128
     img_size = 128
     num_layers = int(np.log2(img_size)) - 3
@@ -59,9 +57,9 @@ if __name__ == '__main__':
     encoder = ogan.encoder
     generator = ogan.generator
 
-    optimizer_g = torch.optim.AdamW(generator.parameters(), lr=lr, betas=(0.5, 0.99))
+    optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr, alpha=0.999)
     g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-6)
-    optimizer_e = torch.optim.AdamW(encoder.parameters(), lr=lr, betas=(0.5, 0.99))
+    optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr, alpha=0.999)
     e_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_e, T_max=15, eta_min=5e-6)
 
     step = 0
@@ -90,7 +88,7 @@ if __name__ == '__main__':
 
             z_corr = correlation(z_in, z_fake)
             qp_loss = 0.25 * (z_fake_mean - z_real_mean)[:, 0] ** 2 / torch.mean((x_real - x_fake) ** 2, dim=[1, 2, 3])
-            e_loss = torch.mean(z_real_mean - z_fake_mean - 0.5 * z_corr) + torch.mean(qp_loss)
+            e_loss = torch.mean(z_real_mean - z_fake_mean - z_corr) + torch.mean(qp_loss)
 
             e_loss.backward()
             optimizer_e.step()
@@ -108,7 +106,7 @@ if __name__ == '__main__':
             z_fake_mean = torch.mean(z_fake, dim=1, keepdim=True)
 
             z_corr = correlation(z_in, z_fake)
-            g_loss = torch.mean(z_fake_mean - 0.5 * z_corr)
+            g_loss = torch.mean(z_fake_mean - z_corr)
             g_loss.backward()
             optimizer_g.step()
 
@@ -120,17 +118,19 @@ if __name__ == '__main__':
             step += 1
 
             if step != 0 and step % 50 == 0:
+                ogan.eval()
                 with torch.no_grad():
                     z = torch.randn((64, z_dim)).to(device)
                     imgs = ogan.generator(z)
                     imgs = (imgs + 1) / 2 * 255
 
-                    save_image(imgs, f"output/ae_ckpt_%d_%.6f.png" % (epoch, total_loss / total_size), nrow=8, normalize=True)
+                    save_image(imgs, f"output/ae_ckpt_%d.png" % (step,), nrow=8, normalize=True)
+                ogan.train()
 
             total_loss += (e_loss.item() + g_loss.item())
             total_size += x_real.shape[0]
 
-        g_scheduler.step()
-        e_scheduler.step()
+        # g_scheduler.step()
+        # e_scheduler.step()
 
         torch.save(ogan.state_dict(), f"checkpoints/ogan_ckpt_%d_%.6f.pth" % (epoch, total_loss / total_size))
