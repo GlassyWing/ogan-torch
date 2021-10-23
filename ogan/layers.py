@@ -11,12 +11,12 @@ class SelfModulateBatchNorm2d(nn.Module):
         self._std_bn = nn.BatchNorm2d(in_channel, affine=False)
         self._beta_fc = nn.Sequential(
             nn.Linear(style_dim, in_channel),
-            nn.ReLU(),
+            Swish(),
             nn.Linear(in_channel, in_channel)
         )
         self._gamma_fc = nn.Sequential(
             nn.Linear(style_dim, in_channel),
-            nn.ReLU(),
+            Swish(),
             nn.Linear(in_channel, in_channel)
         )
 
@@ -31,12 +31,12 @@ class UpsampleBlock(nn.Module):
     def __init__(self, in_channel, out_channel, z_dim):
         super().__init__()
 
-        self._up = nn.ConvTranspose2d(in_channel,
-                                      out_channel,
-                                      kernel_size=5,
-                                      stride=2,
-                                      padding=2,
-                                      output_padding=1)
+        self._conv = nn.Conv2d(in_channel,
+                               out_channel,
+                               kernel_size=5,
+                               stride=1,
+                               padding=2)
+        self._up = nn.UpsamplingNearest2d(scale_factor=2)
         self._pixel_norm = PixelNormLayer()
         self._bn = SelfModulateBatchNorm2d(out_channel, z_dim)
         self._act = Swish()
@@ -48,6 +48,7 @@ class UpsampleBlock(nn.Module):
             x = x + self._noise_weights[None, :, None, None] * noise
             self._pixel_norm(x)
         x = self._up(x)
+        x = self._conv(x)
         x = self._bn(x, style)
         x = self._act(x)
         x = self._res(x, style)
@@ -55,42 +56,25 @@ class UpsampleBlock(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channel, out_channel):
+    def __init__(self, in_channel, out_channel, is_last=False):
         super().__init__()
 
-        self._dn = nn.Conv2d(in_channel,
-                             out_channel,
-                             kernel_size=5,
-                             stride=2,
-                             padding=2)
+        self._conv = nn.Conv2d(in_channel,
+                               out_channel,
+                               kernel_size=5,
+                               stride=1,
+                               padding=2)
+        self.is_last = is_last
         self._bn = nn.BatchNorm2d(out_channel)
-        self._act = Swish()
         # self._res = ResidualBlock(out_channel)
+        self._act = Swish()
 
     def forward(self, x):
-        x = self._dn(x)
+        x = self._conv(x)
         x = self._bn(x)
         x = self._act(x)
         # x = self._res(x)
-        return x
-
-
-class SELayer(nn.Module):
-    def __init__(self, channel, reduction=2):
-        super(SELayer, self).__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.fc = nn.Sequential(
-            nn.Linear(channel, channel // reduction, bias=False),
-            nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel, bias=False),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        b, c, _, _ = x.size()
-        y = self.avg_pool(x).view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
+        return F.avg_pool2d(x, 2)
 
 
 class StyleResidualBlock(nn.Module):

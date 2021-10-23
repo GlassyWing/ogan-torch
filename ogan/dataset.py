@@ -9,7 +9,7 @@ from torch.utils.data import Dataset
 class ImageFolderDataset(Dataset):
 
     def __init__(self, image_dir, img_dim):
-        self.img_paths = glob(os.path.join(image_dir, "*.jpg"))
+        self.img_paths = glob(os.path.join(image_dir, "*"))
         self.img_dim = (img_dim, img_dim) if type(img_dim) == int else img_dim
 
     def __getitem__(self, idx):

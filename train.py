@@ -30,10 +30,10 @@ if __name__ == '__main__':
     device = "cuda:3"
 
     lr = 1e-4
-    z_dim = 128
+    z_dim = 512
     img_size = 128
     num_layers = int(np.log2(img_size)) - 3
-    max_num_channels = img_size * 8
+    max_num_channels = img_size * 4
 
     dataset = ImageFolderDataset(opt.dataset_path, img_size)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=opt.n_cpu)
@@ -58,8 +58,10 @@ if __name__ == '__main__':
     generator = ogan.generator
 
     optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr, alpha=0.999)
+    optimizer_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.99))
     g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-6)
     optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr, alpha=0.999)
+    optimizer_e = torch.optim.Adam(encoder.parameters(), lr=lr, betas=(0.5, 0.99))
     e_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_e, T_max=15, eta_min=5e-6)
 
     step = 0

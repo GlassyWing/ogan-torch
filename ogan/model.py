@@ -1,14 +1,12 @@
 import torch
 import torch.nn as nn
 
-from .layers import Swish, UpsampleBlock, ResidualBlock, ConvBlock
+from .layers import UpsampleBlock, ConvBlock
 
 
 class Encoder(nn.Module):
 
-    def __init__(self, z_dim, img_size, num_layers, max_num_channels,
-                 mbstd_group_size=8,
-                 mbstd_num_features=1):
+    def __init__(self, z_dim, img_size, num_layers, max_num_channels):
         super().__init__()
 
         self.map_size = img_size // 2 ** (num_layers + 1)
