@@ -49,7 +49,6 @@ class Generator(nn.Module):
             modules.append(UpsampleBlock(pre_c, cur_c, z_dim))
             pre_c = cur_c
         self._rec = nn.Sequential(
-            # ResidualBlock(pre_c),
             nn.Conv2d(pre_c, 3, kernel_size=1),
             nn.Tanh()
         )

@@ -41,7 +41,7 @@ class UpsampleBlock(nn.Module):
         self._bn = SelfModulateBatchNorm2d(out_channel, z_dim)
         self._act = Swish()
         self._res = StyleResidualBlock(out_channel, z_dim)
-        self._noise_weights = nn.Parameter(torch.ones((in_channel,)) * 0.1)
+        self._noise_weights = nn.Parameter(torch.randn((in_channel,)))
 
     def forward(self, x, style, noise=None):
         if noise is not None:
@@ -56,7 +56,7 @@ class UpsampleBlock(nn.Module):
 
 
 class ConvBlock(nn.Module):
-    def __init__(self, in_channel, out_channel, is_last=False):
+    def __init__(self, in_channel, out_channel):
         super().__init__()
 
         self._conv = nn.Conv2d(in_channel,
@@ -64,17 +64,15 @@ class ConvBlock(nn.Module):
                                kernel_size=5,
                                stride=1,
                                padding=2)
-        self.is_last = is_last
-        self._bn = nn.BatchNorm2d(out_channel)
-        # self._res = ResidualBlock(out_channel)
+        self._res = ResidualBlock(out_channel)
         self._act = Swish()
 
     def forward(self, x):
         x = self._conv(x)
-        x = self._bn(x)
         x = self._act(x)
-        # x = self._res(x)
+        x = self._res(x)
         return F.avg_pool2d(x, 2)
+
 
 
 class StyleResidualBlock(nn.Module):
@@ -103,16 +101,14 @@ class ResidualBlock(nn.Module):
         super().__init__()
         self.alpha = 0.1
         self._seq = nn.Sequential(
-            nn.Conv2d(dim, dim, kernel_size=5, padding=2), Swish(),
-            nn.Conv2d(dim, dim // 2, kernel_size=1), Swish(),
+            nn.Conv2d(dim, dim // 2, kernel_size=3, padding=1), Swish(),
+            nn.Conv2d(dim // 2, dim // 2, kernel_size=1), Swish(),
             nn.Conv2d(dim // 2, dim, kernel_size=3, padding=1))
-        self._bn = nn.BatchNorm2d(dim)
         self._act = Swish()
 
     def forward(self, x):
         x_in = x
         x = self._seq(x)
-        x = self._bn(x)
         x = self._act(x)
         return x_in + self.alpha * x
 

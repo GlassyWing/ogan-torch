@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 from ogan.dataset import ImageFolderDataset
 from ogan.model import OGAN
-from ogan.utils import correlation, weights_init
+from ogan.utils import correlation, weights_init, add_sn
 
 if __name__ == '__main__':
 
@@ -22,7 +22,7 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", type=int, default=128, help="size of each sample batch")
     parser.add_argument("--dataset_path", type=str, required=True, help="dataset path")
     parser.add_argument("--pretrained_weights", type=str, help="if specified starts from checkpoint model")
-    parser.add_argument("--n_cpu", type=int, default=4, help="number of cpu threads to use during batch generation")
+    parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
     opt = parser.parse_args()
 
     epochs = opt.epochs
@@ -43,6 +43,7 @@ if __name__ == '__main__':
 
     ogan = OGAN(z_dim, img_size, num_layers, max_num_channels).to(device)
     ogan.apply(weights_init)
+    ogan.apply(add_sn)
 
     if opt.pretrained_weights is not None:
         pretrained_dict = torch.load(opt.pretrained_weights, map_location=device)
@@ -58,10 +59,10 @@ if __name__ == '__main__':
     generator = ogan.generator
 
     optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr, alpha=0.999)
-    optimizer_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.99))
+    #optimizer_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.99))
     g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-6)
     optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr, alpha=0.999)
-    optimizer_e = torch.optim.Adam(encoder.parameters(), lr=lr, betas=(0.5, 0.99))
+    #optimizer_e = torch.optim.Adam(encoder.parameters(), lr=lr, betas=(0.5, 0.99))
     e_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_e, T_max=15, eta_min=5e-6)
 
     step = 0
@@ -77,6 +78,7 @@ if __name__ == '__main__':
             """
             Train Encoder
             """
+
             for param in generator.parameters():
                 param.requires_grad = False
             for param in encoder.parameters():
@@ -95,9 +97,11 @@ if __name__ == '__main__':
             e_loss.backward()
             optimizer_e.step()
 
+
             """
             Train Generator
             """
+
             for param in encoder.parameters():
                 param.requires_grad = False
             for param in generator.parameters():
@@ -112,6 +116,7 @@ if __name__ == '__main__':
             g_loss.backward()
             optimizer_g.step()
 
+
             train_bar.set_description(
                 "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
                 % (epoch, epochs, i, len(dataloader), e_loss.item(), g_loss.item())
@@ -120,14 +125,12 @@ if __name__ == '__main__':
             step += 1
 
             if step != 0 and step % 50 == 0:
-                ogan.eval()
                 with torch.no_grad():
                     z = torch.randn((64, z_dim)).to(device)
                     imgs = ogan.generator(z)
                     imgs = (imgs + 1) / 2 * 255
 
                     save_image(imgs, f"output/ae_ckpt_%d.png" % (step,), nrow=8, normalize=True)
-                ogan.train()
 
             total_loss += (e_loss.item() + g_loss.item())
             total_size += x_real.shape[0]
