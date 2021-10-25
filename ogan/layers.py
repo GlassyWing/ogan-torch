@@ -31,23 +31,22 @@ class UpsampleBlock(nn.Module):
     def __init__(self, in_channel, out_channel, z_dim):
         super().__init__()
 
-        self._conv = nn.Conv2d(in_channel,
+        self._conv = nn.ConvTranspose2d(in_channel,
                                out_channel,
                                kernel_size=5,
-                               stride=1,
-                               padding=2)
-        self._up = nn.UpsamplingNearest2d(scale_factor=2)
+                               stride=2,
+                               padding=2,
+                               output_padding=1)
         self._pixel_norm = PixelNormLayer()
         self._bn = SelfModulateBatchNorm2d(out_channel, z_dim)
         self._act = Swish()
         self._res = StyleResidualBlock(out_channel, z_dim)
-        self._noise_weights = nn.Parameter(torch.randn((in_channel,)))
+        self._noise_weights = nn.Parameter(torch.zeros((in_channel,)))
 
     def forward(self, x, style, noise=None):
         if noise is not None:
             x = x + self._noise_weights[None, :, None, None] * noise
             self._pixel_norm(x)
-        x = self._up(x)
         x = self._conv(x)
         x = self._bn(x, style)
         x = self._act(x)
@@ -62,7 +61,7 @@ class ConvBlock(nn.Module):
         self._conv = nn.Conv2d(in_channel,
                                out_channel,
                                kernel_size=5,
-                               stride=1,
+                               stride=2,
                                padding=2)
         self._res = ResidualBlock(out_channel)
         self._act = Swish()
@@ -71,7 +70,7 @@ class ConvBlock(nn.Module):
         x = self._conv(x)
         x = self._act(x)
         x = self._res(x)
-        return F.avg_pool2d(x, 2)
+        return x
 
 
 
@@ -79,7 +78,9 @@ class StyleResidualBlock(nn.Module):
 
     def __init__(self, dim, z_dim):
         super().__init__()
-        self.alpha = 0.1
+        self.alpha = nn.Parameter(0.1 * torch.ones(size=(dim,), dtype=torch.float))
+        self.beta = nn.Parameter(torch.zeros(size=(dim,), dtype=torch.float))
+        
         self._seq = nn.Sequential(
             nn.Conv2d(dim, dim, kernel_size=5, padding=2), Swish(),
             nn.Conv2d(dim, dim // 2, kernel_size=1), Swish(),
@@ -92,7 +93,7 @@ class StyleResidualBlock(nn.Module):
         x = self._seq(x)
         x = self._bn(x, style)
         x = self._act(x)
-        return x_in + self.alpha * x
+        return x_in + self.alpha[None, :, None, None] * x + self.beta[None, :, None, None]
 
 
 class ResidualBlock(nn.Module):

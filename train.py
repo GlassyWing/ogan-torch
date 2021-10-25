@@ -22,12 +22,12 @@ if __name__ == '__main__':
     parser.add_argument("--batch_size", type=int, default=128, help="size of each sample batch")
     parser.add_argument("--dataset_path", type=str, required=True, help="dataset path")
     parser.add_argument("--pretrained_weights", type=str, help="if specified starts from checkpoint model")
-    parser.add_argument("--n_cpu", type=int, default=8, help="number of cpu threads to use during batch generation")
+    parser.add_argument("--n_cpu", type=int, default=4, help="number of cpu threads to use during batch generation")
     opt = parser.parse_args()
 
     epochs = opt.epochs
     batch_size = opt.batch_size
-    device = "cuda:3"
+    device = "cuda:0"
 
     lr = 1e-4
     z_dim = 512
@@ -59,11 +59,7 @@ if __name__ == '__main__':
     generator = ogan.generator
 
     optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr, alpha=0.999)
-    #optimizer_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.99))
-    g_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_g, T_max=15, eta_min=5e-6)
     optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr, alpha=0.999)
-    #optimizer_e = torch.optim.Adam(encoder.parameters(), lr=lr, betas=(0.5, 0.99))
-    e_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer_e, T_max=15, eta_min=5e-6)
 
     step = 0
     for epoch in range(epochs):
@@ -134,8 +130,5 @@ if __name__ == '__main__':
 
             total_loss += (e_loss.item() + g_loss.item())
             total_size += x_real.shape[0]
-
-        # g_scheduler.step()
-        # e_scheduler.step()
 
         torch.save(ogan.state_dict(), f"checkpoints/ogan_ckpt_%d_%.6f.pth" % (epoch, total_loss / total_size))
