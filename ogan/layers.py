@@ -64,23 +64,26 @@ class ConvBlock(nn.Module):
                                stride=2,
                                padding=2)
         self._res = ResidualBlock(out_channel)
+        self._bn = nn.BatchNorm2d(out_channel)
         self._act = Swish()
 
     def forward(self, x):
         x = self._conv(x)
+        x = self._bn(x)
         x = self._act(x)
         x = self._res(x)
         return x
-
 
 
 class StyleResidualBlock(nn.Module):
 
     def __init__(self, dim, z_dim):
         super().__init__()
-        self.alpha = nn.Parameter(0.1 * torch.ones(size=(dim,), dtype=torch.float))
-        self.beta = nn.Parameter(torch.zeros(size=(dim,), dtype=torch.float))
-        
+        self.alpha_proj = nn.Sequential(
+            nn.Linear(z_dim, dim),
+            Swish(),
+            nn.Linear(dim, dim),
+        )
         self._seq = nn.Sequential(
             nn.Conv2d(dim, dim, kernel_size=5, padding=2), Swish(),
             nn.Conv2d(dim, dim // 2, kernel_size=1), Swish(),
@@ -93,7 +96,8 @@ class StyleResidualBlock(nn.Module):
         x = self._seq(x)
         x = self._bn(x, style)
         x = self._act(x)
-        return x_in + self.alpha[None, :, None, None] * x + self.beta[None, :, None, None]
+        alpha = self.alpha_proj(style)
+        return x_in + alpha[:, :, None, None] * x
 
 
 class ResidualBlock(nn.Module):
@@ -104,7 +108,8 @@ class ResidualBlock(nn.Module):
         self._seq = nn.Sequential(
             nn.Conv2d(dim, dim // 2, kernel_size=3, padding=1), Swish(),
             nn.Conv2d(dim // 2, dim // 2, kernel_size=1), Swish(),
-            nn.Conv2d(dim // 2, dim, kernel_size=3, padding=1))
+            nn.Conv2d(dim // 2, dim, kernel_size=3, padding=1),
+            nn.BatchNorm2d(dim))
         self._act = Swish()
 
     def forward(self, x):

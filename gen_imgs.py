@@ -3,6 +3,7 @@ import torchvision as tv
 from torchvision.utils import make_grid, save_image
 
 from ogan.model import OGAN
+from ogan.utils import add_sn
 
 if __name__ == '__main__':
     z_dim = 128
@@ -21,6 +22,7 @@ if __name__ == '__main__':
                 img_size=img_size,
                 num_layers=num_layers,
                 max_num_channels=max_num_channels)
+    ogan.apply(add_sn)
 
     ogan.load_state_dict(torch.load("checkpoints/ogan_ckpt_4_0.096371.pth", map_location=device))
 

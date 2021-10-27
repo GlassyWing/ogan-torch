@@ -29,7 +29,7 @@ if __name__ == '__main__':
     batch_size = opt.batch_size
     device = "cuda:0"
 
-    lr = 1e-4
+    lr = 2e-4
     z_dim = 512
     img_size = 128
     num_layers = int(np.log2(img_size)) - 3
@@ -105,10 +105,11 @@ if __name__ == '__main__':
             optimizer_g.zero_grad()
             x_fake = generator(z_in)
             z_fake = encoder(x_fake)
+            z_fake_mean_ng = z_fake_mean.detach()
             z_fake_mean = torch.mean(z_fake, dim=1, keepdim=True)
 
             z_corr = correlation(z_in, z_fake)
-            g_loss = torch.mean(z_fake_mean - z_corr)
+            g_loss = torch.mean(z_fake_mean - z_fake_mean_ng - z_corr)
             g_loss.backward()
             optimizer_g.step()
 
