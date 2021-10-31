@@ -6,10 +6,10 @@ from ogan.model import OGAN
 from ogan.utils import add_sn
 
 if __name__ == '__main__':
-    z_dim = 128
+    z_dim = 512
     img_size = 128
     num_layers = 4
-    max_num_channels = img_size * 8
+    max_num_channels = img_size * 4
 
     device = "cpu" if torch.cuda.is_available() else 'cpu'
 
@@ -24,9 +24,14 @@ if __name__ == '__main__':
                 max_num_channels=max_num_channels)
     ogan.apply(add_sn)
 
-    ogan.load_state_dict(torch.load("checkpoints/ogan_ckpt_4_0.096371.pth", map_location=device))
+    pretrained_dict = torch.load("checkpoints/ogan_ckpt_7_-1.779468.pth", map_location=device)
+    model_dict = ogan.state_dict()
 
-    ogan.eval()
+    # Fiter out unneccessary keys
+    filtered_dict = {k: v for k, v in pretrained_dict.items() if k in model_dict and v.shape == model_dict[k].shape}
+    model_dict.update(filtered_dict)
+    ogan.load_state_dict(model_dict)
+
     ogan.to(device)
     with torch.no_grad():
         z = torch.randn(num_imgs, z_dim).to(device)

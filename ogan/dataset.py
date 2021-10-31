@@ -3,14 +3,16 @@ from glob import glob
 
 import cv2
 import torch
+from PIL import Image
 from torch.utils.data import Dataset
 
 
 class ImageFolderDataset(Dataset):
 
-    def __init__(self, image_dir, img_dim):
+    def __init__(self, image_dir, img_dim, transform=None):
         self.img_paths = glob(os.path.join(image_dir, "*"))
         self.img_dim = (img_dim, img_dim) if type(img_dim) == int else img_dim
+        self.transform = transform
 
     def __getitem__(self, idx):
         image = cv2.imread(self.img_paths[idx])
@@ -24,9 +26,11 @@ class ImageFolderDataset(Dataset):
             left_w = int((w - h) / 2)
             image = image[:, left_w:left_w + h]
         image = cv2.resize(image, self.img_dim, interpolation=cv2.INTER_LINEAR)
-        image = image / 255 * 2 - 1
+        image = Image.fromarray(image, mode="RGB")
+        if self.transform is not None:
+            image = self.transform(image)
 
-        return torch.tensor(image, dtype=torch.float32).permute(2, 0, 1)
+        return image
 
     def __len__(self):
         return len(self.img_paths)

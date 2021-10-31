@@ -5,6 +5,7 @@ import os
 import numpy as np
 import torch
 from torch.utils.data import DataLoader
+from torchvision import transforms
 from torchvision.utils import save_image
 from tqdm import tqdm
 
@@ -35,13 +36,21 @@ if __name__ == '__main__':
     num_layers = int(np.log2(img_size)) - 3
     max_num_channels = img_size * 4
 
-    dataset = ImageFolderDataset(opt.dataset_path, img_size)
+    tfms = transforms.Compose([
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize([0.5, 0.5, 0.5],
+                             [0.5, 0.5, 0.5])
+    ])
+
+    dataset = ImageFolderDataset(opt.dataset_path, img_size,
+                                 transform=tfms)
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=opt.n_cpu)
 
     os.makedirs("checkpoints", exist_ok=True)
     os.makedirs("output", exist_ok=True)
 
-    ogan = OGAN(z_dim, img_size, num_layers, max_num_channels).to(device)
+    ogan = OGAN(z_dim, img_size, num_layers, max_num_channels, num_layers).to(device)
     ogan.apply(weights_init)
     ogan.apply(add_sn)
 
@@ -58,8 +67,8 @@ if __name__ == '__main__':
     encoder = ogan.encoder
     generator = ogan.generator
 
-    optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr, alpha=0.999)
-    optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr, alpha=0.999)
+    optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr)
+    optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr)
 
     step = 0
     for epoch in range(epochs):
@@ -88,11 +97,10 @@ if __name__ == '__main__':
 
             z_corr = correlation(z_in, z_fake)
             qp_loss = 0.25 * (z_fake_mean - z_real_mean)[:, 0] ** 2 / torch.mean((x_real - x_fake) ** 2, dim=[1, 2, 3])
-            e_loss = torch.mean(z_real_mean - z_fake_mean - z_corr) + torch.mean(qp_loss)
+            e_loss = torch.mean(0.5 * (z_real_mean - z_fake_mean) - z_corr) + torch.mean(qp_loss)
 
             e_loss.backward()
             optimizer_e.step()
-
 
             """
             Train Generator
@@ -112,7 +120,6 @@ if __name__ == '__main__':
             g_loss = torch.mean(z_fake_mean - z_fake_mean_ng - z_corr)
             g_loss.backward()
             optimizer_g.step()
-
 
             train_bar.set_description(
                 "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"

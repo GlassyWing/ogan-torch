@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch
 from timm.models.layers import Swish
-import torch.nn.functional as F
+
 
 class SelfModulateBatchNorm2d(nn.Module):
 
@@ -28,22 +28,30 @@ class SelfModulateBatchNorm2d(nn.Module):
 
 
 class UpsampleBlock(nn.Module):
-    def __init__(self, in_channel, out_channel, z_dim):
+    def __init__(self, in_channel, out_channel, z_dim, need_trunc=False):
         super().__init__()
 
         self._conv = nn.ConvTranspose2d(in_channel,
-                               out_channel,
-                               kernel_size=5,
-                               stride=2,
-                               padding=2,
-                               output_padding=1)
+                                        out_channel,
+                                        kernel_size=5,
+                                        stride=2,
+                                        padding=2,
+                                        output_padding=1)
+        self._style_extract = nn.Linear(z_dim, z_dim)
         self._pixel_norm = PixelNormLayer()
         self._bn = SelfModulateBatchNorm2d(out_channel, z_dim)
         self._act = Swish()
         self._res = StyleResidualBlock(out_channel, z_dim)
         self._noise_weights = nn.Parameter(torch.zeros((in_channel,)))
+        if need_trunc:
+            self._trunc = TruncationLayer(z_dim)
+        else:
+            self._trunc = None
 
     def forward(self, x, style, noise=None):
+        style = self._style_extract(style)
+        if self.training and self._trunc is not None:
+            style = self._trunc(style)
         if noise is not None:
             x = x + self._noise_weights[None, :, None, None] * noise
             self._pixel_norm(x)
@@ -126,3 +134,24 @@ class PixelNormLayer(nn.Module):
 
     def forward(self, x):
         return x * torch.rsqrt(torch.mean(x ** 2, dim=1, keepdim=True) + self.epsilon)
+
+
+class TruncationLayer(nn.Module):
+
+    def __init__(self, latent_size, threshold=1.0, beta=0.998):
+        super().__init__()
+        self.threshold = threshold
+        self.beta = beta
+        self.register_buffer('avg_latent', torch.zeros(latent_size))
+        self.is_init = True
+
+    def update(self, last_avg):
+        if self.is_init:
+            self.avg_latent.copy_(last_avg)
+            self.is_init = False
+        self.avg_latent.copy_(self.beta * self.avg_latent + (1. - self.beta) * last_avg)
+
+    def forward(self, x):
+        assert x.dim() == 2
+        interp = torch.lerp(self.avg_latent, x, self.threshold)
+        return interp
