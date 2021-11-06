@@ -1,6 +1,7 @@
 import argparse
 import logging
 import os
+from copy import deepcopy
 
 import numpy as np
 import torch
@@ -11,7 +12,7 @@ from tqdm import tqdm
 
 from ogan.dataset import ImageFolderDataset
 from ogan.model import OGAN
-from ogan.utils import correlation, weights_init, add_sn
+from ogan.utils import correlation, weights_init, add_sn, update_average, update, toggle_grad
 
 if __name__ == '__main__':
 
@@ -33,6 +34,7 @@ if __name__ == '__main__':
     lr = 2e-4
     z_dim = 512
     img_size = 128
+    beta = 0.999
     num_layers = int(np.log2(img_size)) - 3
     max_num_channels = img_size * 4
 
@@ -54,6 +56,9 @@ if __name__ == '__main__':
     ogan.apply(weights_init)
     ogan.apply(add_sn)
 
+    ogan_shadow = deepcopy(ogan)
+    ema_updater = update_average
+
     if opt.pretrained_weights is not None:
         pretrained_dict = torch.load(opt.pretrained_weights, map_location=device)
         model_dict = ogan.state_dict()
@@ -67,8 +72,8 @@ if __name__ == '__main__':
     encoder = ogan.encoder
     generator = ogan.generator
 
-    optimizer_g = torch.optim.RMSprop(generator.parameters(), lr=lr)
-    optimizer_e = torch.optim.RMSprop(encoder.parameters(), lr=lr)
+    optimizer_g = torch.optim.Adam(generator.parameters(), lr=lr, betas=(0.5, 0.99))
+    optimizer_e = torch.optim.Adam(encoder.parameters(), lr=lr, betas=(0.5, 0.99))
 
     step = 0
     for epoch in range(epochs):
@@ -84,10 +89,8 @@ if __name__ == '__main__':
             Train Encoder
             """
 
-            for param in generator.parameters():
-                param.requires_grad = False
-            for param in encoder.parameters():
-                param.requires_grad = True
+            toggle_grad(encoder, True)
+            toggle_grad(generator, False)
             optimizer_e.zero_grad()
             x_fake = generator(z_in).detach()
             z_fake = encoder(x_fake)
@@ -96,8 +99,8 @@ if __name__ == '__main__':
             z_real_mean = torch.mean(z_real, dim=1, keepdim=True)
 
             z_corr = correlation(z_in, z_fake)
-            qp_loss = 0.25 * (z_fake_mean - z_real_mean)[:, 0] ** 2 / torch.mean((x_real - x_fake) ** 2, dim=[1, 2, 3])
-            e_loss = torch.mean(0.5 * (z_real_mean - z_fake_mean) - z_corr) + torch.mean(qp_loss)
+            qp_loss = 0.25 * (z_real_mean - z_fake_mean)[:, 0] ** 2 / torch.mean((x_real - x_fake) ** 2, dim=[1, 2, 3])
+            e_loss = torch.sum(0.5 * (z_real_mean - z_fake_mean) - z_corr) + torch.sum(qp_loss)
 
             e_loss.backward()
             optimizer_e.step()
@@ -106,10 +109,8 @@ if __name__ == '__main__':
             Train Generator
             """
 
-            for param in encoder.parameters():
-                param.requires_grad = False
-            for param in generator.parameters():
-                param.requires_grad = True
+            toggle_grad(encoder, False)
+            toggle_grad(generator, True)
             optimizer_g.zero_grad()
             x_fake = generator(z_in)
             z_fake = encoder(x_fake)
@@ -117,9 +118,17 @@ if __name__ == '__main__':
             z_fake_mean = torch.mean(z_fake, dim=1, keepdim=True)
 
             z_corr = correlation(z_in, z_fake)
-            g_loss = torch.mean(z_fake_mean - z_fake_mean_ng - z_corr)
+
+            qp_loss = 0.25 * (z_fake_mean - z_real_mean.detach())[:, 0] ** 2 / torch.mean((x_real - x_fake) ** 2, dim=[1, 2, 3])
+            g_loss = torch.sum(z_fake_mean - z_corr) + torch.sum(qp_loss)
             g_loss.backward()
             optimizer_g.step()
+
+            ema_updater(ogan_shadow, ogan, beta=beta)
+
+            # Update weights after a while
+            if step != 0 and step % int(1 / (1 - beta)) == 0:
+                update(ogan, ogan_shadow)
 
             train_bar.set_description(
                 "[Epoch %d/%d] [Batch %d/%d] [D loss: %f] [G loss: %f]"
@@ -134,9 +143,14 @@ if __name__ == '__main__':
                     imgs = ogan.generator(z)
                     imgs = (imgs + 1) / 2 * 255
 
-                    save_image(imgs, f"output/ae_ckpt_%d.png" % (step,), nrow=8, normalize=True)
+                    save_image(imgs, f"output/ae_ckpt_%d_%d.png" % (epoch, step,), nrow=8, normalize=True)
+
+                    imgs = ogan_shadow.generator(z)
+                    imgs = (imgs + 1) / 2 * 255
+                    save_image(imgs, f"output/ae_ckpt_%d_%d_ema.png" % (epoch, step,), nrow=8, normalize=True)
 
             total_loss += (e_loss.item() + g_loss.item())
             total_size += x_real.shape[0]
 
         torch.save(ogan.state_dict(), f"checkpoints/ogan_ckpt_%d_%.6f.pth" % (epoch, total_loss / total_size))
+        torch.save(ogan_shadow.state_dict(), f"checkpoints/ogan_ckpt_%d_ema_%.6f.pth" % (epoch, total_loss / total_size))

@@ -38,7 +38,6 @@ class UpsampleBlock(nn.Module):
                                         padding=2,
                                         output_padding=1)
         self._style_extract = nn.Linear(z_dim, z_dim)
-        self._pixel_norm = PixelNormLayer()
         self._bn = SelfModulateBatchNorm2d(out_channel, z_dim)
         self._act = Swish()
         self._res = StyleResidualBlock(out_channel, z_dim)
@@ -54,7 +53,6 @@ class UpsampleBlock(nn.Module):
             style = self._trunc(style)
         if noise is not None:
             x = x + self._noise_weights[None, :, None, None] * noise
-            self._pixel_norm(x)
         x = self._conv(x)
         x = self._bn(x, style)
         x = self._act(x)
@@ -138,7 +136,7 @@ class PixelNormLayer(nn.Module):
 
 class TruncationLayer(nn.Module):
 
-    def __init__(self, latent_size, threshold=1.0, beta=0.998):
+    def __init__(self, latent_size, threshold=0.8, beta=0.995):
         super().__init__()
         self.threshold = threshold
         self.beta = beta
