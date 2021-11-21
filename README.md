@@ -26,6 +26,6 @@ Using celeba dataset, after 3 epochs (About 2 hours):
 
 ### Generation
 
-<img src="./assets/demo.png">
+<img src="./assets/celeba.png">
 
 

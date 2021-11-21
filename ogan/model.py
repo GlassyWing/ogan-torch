@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from .layers import UpsampleBlock, ConvBlock, TruncationLayer
+from .layers import UpsampleBlock, ConvBlock, TruncationLayer, Mapping
 
 
 class Encoder(nn.Module):
@@ -19,16 +19,20 @@ class Encoder(nn.Module):
             pre_c = cur_c
 
         self._fc = nn.Linear(max_num_channels * self.map_size * self.map_size, z_dim)
-
-        self._seq = nn.Sequential(*modules)
+        self._seq = nn.ModuleList(modules)
 
     def map_size(self):
         return self.map_size
 
     def forward(self, x):
-        x = self._seq(x).reshape(x.shape[0], -1)
+        inter_outs =[]
+        for module in self._seq:
+            noise = torch.randn_like(x)
+            x = module(x, noise)
+            inter_outs.append(x)
+        x = x.reshape(x.shape[0], -1)
         x = self._fc(x)
-        return x
+        return x, inter_outs[:-1]
 
 
 class Generator(nn.Module):
@@ -43,6 +47,7 @@ class Generator(nn.Module):
 
         self._fc = nn.Linear(z_dim, self.map_size ** 2 * max_num_channels)
         self._trunc = TruncationLayer(z_dim)
+        self._map = Mapping(z_dim, 4)
 
         modules = []
         pre_c = max_num_channels
@@ -55,18 +60,19 @@ class Generator(nn.Module):
             nn.Tanh()
         )
         self.module_list = nn.ModuleList(modules)
+        self._dt = nn.Parameter(torch.randn((1,)))
 
-    def forward(self, z):
+    def forward(self, z, t=3):
         """
 
         :param z: Tensor. shape = (B, z_dim)
         :return:
         """
-        style = z
 
-        if self.training and self._trunc:
-            self._trunc.update(style[0].detach())
-            z = self._trunc(z)
+        # for i in range(t):
+        z = self._map(z)
+
+        style = z
 
         z = self._fc(z)
         z = z.reshape(-1, self.max_num_channels, self.map_size, self.map_size)

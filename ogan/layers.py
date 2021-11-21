@@ -72,8 +72,11 @@ class ConvBlock(nn.Module):
         self._res = ResidualBlock(out_channel)
         self._bn = nn.BatchNorm2d(out_channel)
         self._act = Swish()
+        self._noise_weights = nn.Parameter(torch.zeros((in_channel,)))
 
-    def forward(self, x):
+    def forward(self, x, noise=None):
+        if noise is not None:
+            x = x + self._noise_weights[None, :, None, None] * torch.randn_like(x)
         x = self._conv(x)
         x = self._bn(x)
         x = self._act(x)
@@ -85,15 +88,13 @@ class StyleResidualBlock(nn.Module):
 
     def __init__(self, dim, z_dim):
         super().__init__()
-        self.alpha_proj = nn.Sequential(
-            nn.Linear(z_dim, dim),
-            Swish(),
-            nn.Linear(dim, dim),
-        )
+        self.alpha = 0.1
         self._seq = nn.Sequential(
-            nn.Conv2d(dim, dim, kernel_size=5, padding=2), Swish(),
-            nn.Conv2d(dim, dim // 2, kernel_size=1), Swish(),
-            nn.Conv2d(dim // 2, dim, kernel_size=3, padding=1))
+            nn.Conv2d(dim, dim, kernel_size=5, padding=2),
+            nn.BatchNorm2d(dim), Swish(),
+            nn.Conv2d(dim, dim // 2, kernel_size=1),
+            nn.BatchNorm2d(dim // 2), Swish(),
+            nn.Conv2d(dim // 2, dim, kernel_size=5, padding=2))
         self._bn = SelfModulateBatchNorm2d(dim, z_dim)
         self._act = Swish()
 
@@ -102,8 +103,7 @@ class StyleResidualBlock(nn.Module):
         x = self._seq(x)
         x = self._bn(x, style)
         x = self._act(x)
-        alpha = self.alpha_proj(style)
-        return x_in + alpha[:, :, None, None] * x
+        return x_in + self.alpha* x
 
 
 class ResidualBlock(nn.Module):
@@ -112,9 +112,11 @@ class ResidualBlock(nn.Module):
         super().__init__()
         self.alpha = 0.1
         self._seq = nn.Sequential(
-            nn.Conv2d(dim, dim // 2, kernel_size=3, padding=1), Swish(),
-            nn.Conv2d(dim // 2, dim // 2, kernel_size=1), Swish(),
-            nn.Conv2d(dim // 2, dim, kernel_size=3, padding=1),
+            nn.Conv2d(dim, dim, kernel_size=5, padding=2),
+            nn.BatchNorm2d(dim ), Swish(),
+            nn.Conv2d(dim, dim // 2, kernel_size=1),
+            nn.BatchNorm2d(dim // 2), Swish(),
+            nn.Conv2d(dim // 2, dim, kernel_size=5, padding=2),
             nn.BatchNorm2d(dim))
         self._act = Swish()
 
@@ -134,9 +136,34 @@ class PixelNormLayer(nn.Module):
         return x * torch.rsqrt(torch.mean(x ** 2, dim=1, keepdim=True) + self.epsilon)
 
 
+class LinearRes(nn.Module):
+
+    def __init__(self, dim):
+        super().__init__()
+        self._seq = nn.Sequential(nn.Linear(dim, dim), nn.Tanh())
+        self._alpha = 0.1
+
+    def forward(self, x):
+        return x + self._alpha * self._seq(x)
+
+
+class Mapping(nn.Module):
+
+    def __init__(self, dim, num=4):
+        super().__init__()
+
+        blocks = []
+        for i in range(num):
+            blocks.append(LinearRes(dim))
+        self._blocks = nn.Sequential(*blocks)
+
+    def forward(self, x):
+        return self._blocks(x)
+
+
 class TruncationLayer(nn.Module):
 
-    def __init__(self, latent_size, threshold=0.8, beta=0.995):
+    def __init__(self, latent_size, threshold=1.0, beta=0.995):
         super().__init__()
         self.threshold = threshold
         self.beta = beta

@@ -21,7 +21,7 @@ if __name__ == '__main__':
                 max_num_channels=max_num_channels)
     ogan.apply(add_sn)
 
-    pretrained_dict = torch.load("checkpoints/ogan_ckpt_7_ema_-0.609831.pth", map_location=device)
+    pretrained_dict = torch.load("checkpoints/ogan_ckpt_4_ema_-0.039934.pth", map_location=device)
     model_dict = ogan.state_dict()
 
     # Fiter out unneccessary keys
@@ -37,14 +37,14 @@ if __name__ == '__main__':
     ])
 
     ds = ImageFolderDataset("G:/data/GAN/anime_face", img_size, transform=tfms)
-    img = ds[566]
+    img = ds[385]
 
     plt.imshow(((img + 1) / 2).permute(1, 2, 0))
     plt.show()
     with torch.no_grad():
         img = img.unsqueeze(0).to(device)
-        z = ogan.encoder(img)
-        z = (z - z.mean(dim=1, keepdim=True)) / z.std(dim=1, keepdim=True)
+        z, _ = ogan.encoder(img)
+        # z = (z - z.mean(dim=1, keepdim=True)) / z.std(dim=1, keepdim=True)
 
         recon = ogan.generator(z)
         recon = (recon + 1) / 2 * 255
